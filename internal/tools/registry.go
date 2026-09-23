@@ -30,6 +30,9 @@ func Register() ([]mcp.ToolDesc, map[string]mcp.ToolHandler) {
 	registerInventoryTools(add)
 	registerCollectionTools(add)
 	registerShopTools(add)
+	registerFulfillmentTools(add)
+	registerDiscountTools(add)
+	registerContentTools(add)
 
 	return descs, handlers
 }

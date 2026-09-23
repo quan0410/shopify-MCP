@@ -17,8 +17,8 @@ func clearToolFilterEnv(t *testing.T) {
 func TestRegisterFullScopeByDefault(t *testing.T) {
 	clearToolFilterEnv(t)
 	descs, handlers := tools.Register()
-	if len(descs) != 29 {
-		t.Fatalf("expected full tool scope (29 tools), got %d", len(descs))
+	if len(descs) != 49 {
+		t.Fatalf("expected full tool scope (49 tools), got %d", len(descs))
 	}
 
 	wantedTools := []string{
@@ -41,6 +41,17 @@ func TestRegisterFullScopeByDefault(t *testing.T) {
 		"shopify_list_smart_collections", "shopify_create_custom_collection",
 		// Shop (1)
 		"shopify_get_shop",
+		// Fulfillments (4)
+		"shopify_list_fulfillments", "shopify_get_fulfillment",
+		"shopify_create_fulfillment", "shopify_cancel_fulfillment",
+		// Discounts & Price Rules (7)
+		"shopify_list_price_rules", "shopify_get_price_rule", "shopify_create_price_rule",
+		"shopify_delete_price_rule", "shopify_list_discount_codes", "shopify_create_discount_code",
+		"shopify_lookup_discount_code",
+		// Content: Pages & Blogs/Articles (9)
+		"shopify_list_pages", "shopify_get_page", "shopify_create_page",
+		"shopify_update_page", "shopify_delete_page", "shopify_list_blogs",
+		"shopify_list_articles", "shopify_get_article", "shopify_create_article",
 	}
 
 	for _, want := range wantedTools {

@@ -12,9 +12,9 @@
 
 ## Tool visibility
 
-Full scope by default (29 tools). `SHOPIFY_TOOLS=tool1,tool2` narrows to an explicit allowlist.
+Full scope by default (49 tools). `SHOPIFY_TOOLS=tool1,tool2` narrows to an explicit allowlist.
 
-## Tools (29)
+## Tools (49)
 
 | Name | Group | Method | Endpoint |
 |---|---|---|---|
@@ -47,3 +47,23 @@ Full scope by default (29 tools). `SHOPIFY_TOOLS=tool1,tool2` narrows to an expl
 | `shopify_list_smart_collections` | collections | GET | `/smart_collections.json` |
 | `shopify_create_custom_collection` | collections | POST | `/custom_collections.json` |
 | `shopify_get_shop` | shop | GET | `/shop.json` |
+| `shopify_list_fulfillments` | fulfillments | GET | `/orders/{order_id}/fulfillments.json` |
+| `shopify_get_fulfillment` | fulfillments | GET | `/orders/{order_id}/fulfillments/{id}.json` |
+| `shopify_create_fulfillment` | fulfillments | POST | `/fulfillments.json` |
+| `shopify_cancel_fulfillment` | fulfillments | POST | `/fulfillments/{id}/cancel.json` |
+| `shopify_list_price_rules` | discounts | GET | `/price_rules.json` |
+| `shopify_get_price_rule` | discounts | GET | `/price_rules/{id}.json` |
+| `shopify_create_price_rule` | discounts | POST | `/price_rules.json` |
+| `shopify_delete_price_rule` | discounts | DELETE | `/price_rules/{id}.json` |
+| `shopify_list_discount_codes` | discounts | GET | `/price_rules/{id}/discount_codes.json` |
+| `shopify_create_discount_code` | discounts | POST | `/price_rules/{id}/discount_codes.json` |
+| `shopify_lookup_discount_code` | discounts | GET | `/discount_codes/lookup.json` |
+| `shopify_list_pages` | content | GET | `/pages.json` |
+| `shopify_get_page` | content | GET | `/pages/{id}.json` |
+| `shopify_create_page` | content | POST | `/pages.json` |
+| `shopify_update_page` | content | PUT | `/pages/{id}.json` |
+| `shopify_delete_page` | content | DELETE | `/pages/{id}.json` |
+| `shopify_list_blogs` | content | GET | `/blogs.json` |
+| `shopify_list_articles` | content | GET | `/blogs/{id}/articles.json` |
+| `shopify_get_article` | content | GET | `/blogs/{id}/articles/{id}.json` |
+| `shopify_create_article` | content | POST | `/blogs/{id}/articles.json` |
