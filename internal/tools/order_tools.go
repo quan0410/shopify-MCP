@@ -6,20 +6,39 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/datumbridge/shopify-mcp/internal/mcp"
 )
 
+// defaultSafeOrderFields specifies common order fields that exclude Personally Identifiable Information (PII)
+// such as customer, email, phone, and addresses, allowing apps without Protected Customer Data (PCD) approval to query orders.
+const defaultSafeOrderFields = "id,name,order_number,created_at,financial_status,fulfillment_status,total_price,subtotal_price,currency,line_items,cancel_reason,cancelled_at,closed_at"
+
+func isProtectedDataError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "protected") ||
+		strings.Contains(msg, "customer data") ||
+		strings.Contains(msg, "read_customers") ||
+		strings.Contains(msg, "not permitted") ||
+		strings.Contains(msg, "403")
+}
+
 func registerOrderTools(add toolAdder) {
 	add(
 		"shopify_list_orders",
-		"List orders from the store with filters for status, financial_status, fulfillment_status, and pagination.",
+		"List orders from the store with filters for status, financial_status, fulfillment_status, and pagination. To avoid Shopify 403 Forbidden / Protected Customer Data errors when the app lacks PCD approval, specify 'fields' (e.g. 'id,name,created_at,financial_status,fulfillment_status,total_price,currency,line_items') or set safe_mode to true.",
 		baseProps(map[string]interface{}{
 			"limit":              map[string]interface{}{"type": "integer", "description": "Number of orders to retrieve (default 50, max 250)"},
 			"since_id":           map[string]interface{}{"type": "string", "description": "Restrict results to after the specified order ID"},
 			"status":             map[string]interface{}{"type": "string", "description": "Filter by status: open, closed, cancelled, any (default open)"},
 			"financial_status":   map[string]interface{}{"type": "string", "description": "Filter by financial status: authorized, pending, paid, refunded, voided, any"},
 			"fulfillment_status": map[string]interface{}{"type": "string", "description": "Filter by fulfillment status: shipped, partial, unshipped, any"},
+			"fields":             map[string]interface{}{"type": "string", "description": "Comma-separated list of fields to retrieve (e.g. 'id,name,order_number,created_at,financial_status,fulfillment_status,total_price,currency,line_items'). Excludes customer/address PII to prevent Shopify 403 Protected Customer Data errors."},
+			"safe_mode":          map[string]interface{}{"type": "boolean", "description": "If true, automatically queries only non-PII fields to avoid Protected Customer Data restrictions (default false)."},
 		}),
 		nil,
 		handleShopifyListOrders,
@@ -27,9 +46,11 @@ func registerOrderTools(add toolAdder) {
 
 	add(
 		"shopify_get_order",
-		"Retrieve single order details by order ID, including line items, customer, and shipping address.",
+		"Retrieve single order details by order ID. Use 'fields' or 'safe_mode' to exclude customer/address PII and avoid Shopify 403 Protected Customer Data errors.",
 		baseProps(map[string]interface{}{
-			"order_id": map[string]interface{}{"type": "string", "description": "Order ID"},
+			"order_id":  map[string]interface{}{"type": "string", "description": "Order ID"},
+			"fields":    map[string]interface{}{"type": "string", "description": "Comma-separated list of fields to retrieve (e.g. 'id,name,order_number,created_at,financial_status,fulfillment_status,total_price,currency,line_items')."},
+			"safe_mode": map[string]interface{}{"type": "boolean", "description": "If true, queries only non-PII fields to avoid Protected Customer Data restrictions (default false)."},
 		}),
 		[]string{"order_id"},
 		handleShopifyGetOrder,
@@ -75,11 +96,13 @@ func registerOrderTools(add toolAdder) {
 
 	add(
 		"shopify_list_draft_orders",
-		"List draft orders with optional status filter and pagination.",
+		"List draft orders with optional status filter, fields, and pagination.",
 		baseProps(map[string]interface{}{
-			"limit":    map[string]interface{}{"type": "integer", "description": "Number of draft orders to return"},
-			"since_id": map[string]interface{}{"type": "string", "description": "Filter draft orders after specified ID"},
-			"status":   map[string]interface{}{"type": "string", "description": "open, invoice_sent, completed"},
+			"limit":     map[string]interface{}{"type": "integer", "description": "Number of draft orders to return"},
+			"since_id":  map[string]interface{}{"type": "string", "description": "Filter draft orders after specified ID"},
+			"status":    map[string]interface{}{"type": "string", "description": "open, invoice_sent, completed"},
+			"fields":    map[string]interface{}{"type": "string", "description": "Comma-separated list of fields to retrieve (e.g. 'id,name,status,total_price,line_items')."},
+			"safe_mode": map[string]interface{}{"type": "boolean", "description": "If true, queries only non-PII fields to avoid Protected Customer Data restrictions (default false)."},
 		}),
 		nil,
 		handleShopifyListDraftOrders,
@@ -120,11 +143,29 @@ func handleShopifyListOrders(args json.RawMessage) map[string]interface{} {
 	if ful := strArg(m, "fulfillment_status"); ful != "" {
 		q.Set("fulfillment_status", ful)
 	}
+	fields := strArg(m, "fields")
+	if fields == "" && boolArg(m, "safe_mode", false) {
+		fields = defaultSafeOrderFields
+	}
+	if fields != "" {
+		q.Set("fields", fields)
+	}
 
 	c, cancel := ctx()
 	defer cancel()
-	data, _, err := client.Request(c, http.MethodGet, "/orders.json", q, nil)
+	data, code, err := client.Request(c, http.MethodGet, "/orders.json", q, nil)
 	if err != nil {
+		// Fallback: If failed due to Protected Customer Data and fields wasn't explicitly specified, retry with safe non-PII fields
+		if (code == http.StatusForbidden || isProtectedDataError(err)) && fields == "" {
+			q.Set("fields", defaultSafeOrderFields)
+			retryData, _, retryErr := client.Request(c, http.MethodGet, "/orders.json", q, nil)
+			if retryErr == nil {
+				return rawResult(retryData)
+			}
+		}
+		if code == http.StatusForbidden || isProtectedDataError(err) {
+			return mcp.ToolResultError(fmt.Sprintf("%s. Hint: App may lack approval for Protected Customer Data (PCD). Pass 'fields' with non-PII fields (e.g. '%s') or use shopify_graphql.", err.Error(), defaultSafeOrderFields))
+		}
 		return mcp.ToolResultError(err.Error())
 	}
 	return rawResult(data)
@@ -140,10 +181,30 @@ func handleShopifyGetOrder(args json.RawMessage) map[string]interface{} {
 		return mcp.ToolResultError("order_id is required")
 	}
 
+	q := url.Values{}
+	fields := strArg(m, "fields")
+	if fields == "" && boolArg(m, "safe_mode", false) {
+		fields = defaultSafeOrderFields
+	}
+	if fields != "" {
+		q.Set("fields", fields)
+	}
+
 	c, cancel := ctx()
 	defer cancel()
-	data, _, err := client.Request(c, http.MethodGet, fmt.Sprintf("/orders/%s.json", orderID), url.Values{}, nil)
+	data, code, err := client.Request(c, http.MethodGet, fmt.Sprintf("/orders/%s.json", orderID), q, nil)
 	if err != nil {
+		// Fallback: If failed due to Protected Customer Data and fields wasn't explicitly specified, retry with safe non-PII fields
+		if (code == http.StatusForbidden || isProtectedDataError(err)) && fields == "" {
+			q.Set("fields", defaultSafeOrderFields)
+			retryData, _, retryErr := client.Request(c, http.MethodGet, fmt.Sprintf("/orders/%s.json", orderID), q, nil)
+			if retryErr == nil {
+				return rawResult(retryData)
+			}
+		}
+		if code == http.StatusForbidden || isProtectedDataError(err) {
+			return mcp.ToolResultError(fmt.Sprintf("%s. Hint: App may lack approval for Protected Customer Data (PCD). Pass 'fields' with non-PII fields (e.g. '%s') or use shopify_graphql.", err.Error(), defaultSafeOrderFields))
+		}
 		return mcp.ToolResultError(err.Error())
 	}
 	return rawResult(data)
@@ -250,6 +311,13 @@ func handleShopifyListDraftOrders(args json.RawMessage) map[string]interface{} {
 	}
 	if st := strArg(m, "status"); st != "" {
 		q.Set("status", st)
+	}
+	fields := strArg(m, "fields")
+	if fields == "" && boolArg(m, "safe_mode", false) {
+		fields = "id,name,status,total_price,subtotal_price,currency,line_items,created_at,updated_at"
+	}
+	if fields != "" {
+		q.Set("fields", fields)
 	}
 
 	c, cancel := ctx()

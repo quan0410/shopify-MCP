@@ -33,6 +33,7 @@ func Register() ([]mcp.ToolDesc, map[string]mcp.ToolHandler) {
 	registerFulfillmentTools(add)
 	registerDiscountTools(add)
 	registerContentTools(add)
+	registerGraphQLTools(add)
 
 	return descs, handlers
 }

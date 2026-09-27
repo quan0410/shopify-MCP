@@ -12,9 +12,9 @@
 
 ## Tool visibility
 
-Full scope by default (49 tools). `SHOPIFY_TOOLS=tool1,tool2` narrows to an explicit allowlist.
+Full scope by default (50 tools). `SHOPIFY_TOOLS=tool1,tool2` narrows to an explicit allowlist.
 
-## Tools (49)
+## Tools (50)
 
 | Name | Group | Method | Endpoint |
 |---|---|---|---|
@@ -67,3 +67,14 @@ Full scope by default (49 tools). `SHOPIFY_TOOLS=tool1,tool2` narrows to an expl
 | `shopify_list_articles` | content | GET | `/blogs/{id}/articles.json` |
 | `shopify_get_article` | content | GET | `/blogs/{id}/articles/{id}.json` |
 | `shopify_create_article` | content | POST | `/blogs/{id}/articles.json` |
+| `shopify_graphql` | graphql | POST | `/graphql.json` |
+
+## Protected Customer Data (PCD) Handling for Orders
+
+When querying orders via `shopify_list_orders` or `shopify_get_order`, apps without Shopify Protected Customer Data approval may receive `403 Forbidden` if customer PII (e.g. `customer`, `email`, addresses) is requested.
+
+- **`fields` parameter**: Pass comma-separated non-PII fields: `id,name,order_number,created_at,financial_status,fulfillment_status,total_price,currency,line_items`.
+- **`safe_mode: true`**: Automatically filters the request to safe non-PII fields.
+- **Automatic Fallback**: If `shopify_list_orders` or `shopify_get_order` receives a 403 Forbidden PCD error without explicit fields specified, it automatically retries with safe non-PII fields.
+- **`shopify_graphql`**: Alternatively, use GraphQL to query exact fields without requesting customer PII.
+

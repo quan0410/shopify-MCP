@@ -105,6 +105,22 @@ func (c *Client) Request(ctx context.Context, method, path string, query url.Val
 	return data, resp.StatusCode, nil
 }
 
+// GraphQL executes an authenticated GraphQL query or mutation against the Shopify Admin API.
+func (c *Client) GraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, int, error) {
+	if c == nil || c.creds == nil {
+		return nil, 0, fmt.Errorf("shopify client not configured")
+	}
+
+	payload := map[string]interface{}{
+		"query": query,
+	}
+	if len(variables) > 0 {
+		payload["variables"] = variables
+	}
+
+	return c.Request(ctx, http.MethodPost, "/graphql.json", nil, payload)
+}
+
 // TokenMasked returns a redacted access token preview.
 func (c *Client) TokenMasked() string {
 	if c == nil || c.creds == nil {

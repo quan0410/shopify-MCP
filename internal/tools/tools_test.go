@@ -17,8 +17,8 @@ func clearToolFilterEnv(t *testing.T) {
 func TestRegisterFullScopeByDefault(t *testing.T) {
 	clearToolFilterEnv(t)
 	descs, handlers := tools.Register()
-	if len(descs) != 49 {
-		t.Fatalf("expected full tool scope (49 tools), got %d", len(descs))
+	if len(descs) != 50 {
+		t.Fatalf("expected full tool scope (50 tools), got %d", len(descs))
 	}
 
 	wantedTools := []string{
@@ -52,6 +52,8 @@ func TestRegisterFullScopeByDefault(t *testing.T) {
 		"shopify_list_pages", "shopify_get_page", "shopify_create_page",
 		"shopify_update_page", "shopify_delete_page", "shopify_list_blogs",
 		"shopify_list_articles", "shopify_get_article", "shopify_create_article",
+		// GraphQL (1)
+		"shopify_graphql",
 	}
 
 	for _, want := range wantedTools {
@@ -193,5 +195,70 @@ func TestHandleGetShopSuccess(t *testing.T) {
 	res := handlers["shopify_get_shop"](args)
 	if res["isError"] == true {
 		t.Fatalf("unexpected error result: %+v", res)
+	}
+}
+
+func TestHandleGraphQLSuccess(t *testing.T) {
+	clearToolFilterEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/admin/api/2024-04/graphql.json" {
+			t.Errorf("unexpected path: %q", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("unexpected method: %q", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"orders":{"edges":[]}}}`))
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	var m map[string]interface{}
+	_ = json.Unmarshal(args, &m)
+	m["query"] = "{ orders(first: 5) { edges { node { id name } } } }"
+	raw, _ := json.Marshal(m)
+
+	_, handlers := tools.Register()
+	res := handlers["shopify_graphql"](raw)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+}
+
+func TestHandleListOrdersProtectedCustomerDataFallback(t *testing.T) {
+	clearToolFilterEnv(t)
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			// First call without fields fails with 403 Forbidden due to Protected Customer Data
+			if r.URL.Query().Get("fields") != "" {
+				t.Errorf("expected first call to have no fields, got: %q", r.URL.Query().Get("fields"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"errors":"[API] This action requires merchant approval for read_customers or protected customer data"}`))
+			return
+		}
+		// Second call (automatic fallback retry) should include safe fields
+		fields := r.URL.Query().Get("fields")
+		if fields == "" {
+			t.Errorf("expected second call to specify fields")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"orders":[{"id":1001,"financial_status":"paid"}]}`))
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	_, handlers := tools.Register()
+	res := handlers["shopify_list_orders"](args)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 calls (initial + safe fields fallback), got %d", callCount)
 	}
 }
