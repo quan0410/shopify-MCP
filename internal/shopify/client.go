@@ -100,6 +100,20 @@ func (c *Client) Request(ctx context.Context, method, path string, query url.Val
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg := sanitizeProviderError(string(data))
+		if msg == "(empty body)" {
+			switch resp.StatusCode {
+			case http.StatusUnprocessableEntity:
+				msg = "422 Unprocessable Entity (missing required parameters or invalid request)"
+			case http.StatusBadRequest:
+				msg = "400 Bad Request"
+			case http.StatusNotFound:
+				msg = "404 Not Found"
+			case http.StatusUnauthorized:
+				msg = "401 Unauthorized"
+			case http.StatusForbidden:
+				msg = "403 Forbidden"
+			}
+		}
 		return data, resp.StatusCode, fmt.Errorf("shopify HTTP %d: %s", resp.StatusCode, msg)
 	}
 	return data, resp.StatusCode, nil

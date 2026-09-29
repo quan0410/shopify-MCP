@@ -262,3 +262,91 @@ func TestHandleListOrdersProtectedCustomerDataFallback(t *testing.T) {
 		t.Fatalf("expected 2 calls (initial + safe fields fallback), got %d", callCount)
 	}
 }
+
+func TestHandleListInventoryLevels_AutoLocations(t *testing.T) {
+	clearToolFilterEnv(t)
+	var locationsCalled, inventoryCalled bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/admin/api/2024-04/locations.json" {
+			locationsCalled = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"locations":[{"id":777888,"active":true}]}`))
+			return
+		}
+		if r.URL.Path == "/admin/api/2024-04/inventory_levels.json" {
+			inventoryCalled = true
+			if r.URL.Query().Get("location_ids") != "777888" {
+				t.Errorf("expected location_ids '777888', got: %q", r.URL.Query().Get("location_ids"))
+			}
+			if r.URL.Query().Get("limit") != "200" {
+				t.Errorf("expected limit '200', got: %q", r.URL.Query().Get("limit"))
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"inventory_levels":[{"inventory_item_id":123,"location_id":777888,"available":10}]}`))
+			return
+		}
+		t.Errorf("unexpected path: %q", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	var m map[string]interface{}
+	_ = json.Unmarshal(args, &m)
+	m["limit"] = 200
+	raw, _ := json.Marshal(m)
+
+	_, handlers := tools.Register()
+	res := handlers["shopify_list_inventory_levels"](raw)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+	if !locationsCalled || !inventoryCalled {
+		t.Fatalf("expected both locations and inventory to be called; locations=%v, inventory=%v", locationsCalled, inventoryCalled)
+	}
+}
+
+func TestHandleListInventoryLevels_ExplicitLocationIDs(t *testing.T) {
+	clearToolFilterEnv(t)
+	var locationsCalled bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/admin/api/2024-04/locations.json" {
+			locationsCalled = true
+		}
+		if r.URL.Path == "/admin/api/2024-04/inventory_levels.json" {
+			if r.URL.Query().Get("location_ids") != "999" {
+				t.Errorf("expected location_ids '999', got: %q", r.URL.Query().Get("location_ids"))
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"inventory_levels":[]}`))
+			return
+		}
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	var m map[string]interface{}
+	_ = json.Unmarshal(args, &m)
+	m["location_ids"] = "999"
+	raw, _ := json.Marshal(m)
+
+	_, handlers := tools.Register()
+	res := handlers["shopify_list_inventory_levels"](raw)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+	if locationsCalled {
+		t.Fatalf("did not expect /locations.json to be called when location_ids is provided explicitly")
+	}
+}
+
+func TestHandleCreateCustomerMissingEmail(t *testing.T) {
+	clearToolFilterEnv(t)
+	_, handlers := tools.Register()
+	res := handlers["shopify_create_customer"](json.RawMessage(`{"credentials_json":"{\"shop\":\"s.myshopify.com\",\"token\":\"t\"}"}`))
+	if res["isError"] != true {
+		t.Fatalf("expected error result for missing email, got: %+v", res)
+	}
+}
+

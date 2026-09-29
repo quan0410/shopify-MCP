@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/datumbridge/shopify-mcp/internal/mcp"
 )
@@ -20,11 +21,11 @@ func registerInventoryTools(add toolAdder) {
 
 	add(
 		"shopify_list_inventory_levels",
-		"Retrieve inventory levels for specific inventory_item_ids or location_ids.",
+		"Retrieve inventory levels for specific inventory_item_ids or location_ids. Shopify requires at least one of location_ids or inventory_item_ids; if neither is provided, active store locations are automatically queried.",
 		baseProps(map[string]interface{}{
-			"inventory_item_ids": map[string]interface{}{"type": "string", "description": "Comma-separated list of inventory item IDs"},
-			"location_ids":       map[string]interface{}{"type": "string", "description": "Comma-separated list of location IDs"},
-			"limit":              map[string]interface{}{"type": "integer", "description": "Number of inventory levels to return (default 50)"},
+			"location_ids":       map[string]interface{}{"type": "string", "description": "Comma-separated list or array of location IDs. Required by Shopify unless inventory_item_ids is provided (auto-detected from active store locations if omitted)."},
+			"inventory_item_ids": map[string]interface{}{"type": "string", "description": "Comma-separated list or array of inventory item IDs. Required by Shopify unless location_ids is provided."},
+			"limit":              map[string]interface{}{"type": "integer", "description": "Number of inventory levels to return (default 50, max 250)"},
 		}),
 		nil,
 		handleShopifyListInventoryLevels,
@@ -75,19 +76,64 @@ func handleShopifyListInventoryLevels(args json.RawMessage) map[string]interface
 	if err != nil {
 		return mcp.ToolResultError(err.Error())
 	}
+
+	itemIDs := strOrSliceArg(m, "inventory_item_ids")
+	if itemIDs == "" {
+		itemIDs = strOrSliceArg(m, "inventory_item_id")
+	}
+	locIDs := strOrSliceArg(m, "location_ids")
+	if locIDs == "" {
+		locIDs = strOrSliceArg(m, "location_id")
+	}
+
+	c, cancel := ctx()
+	defer cancel()
+
+	// Shopify requires at least one of inventory_item_ids or location_ids.
+	// If neither is provided, automatically query active store locations to prevent HTTP 422.
+	if itemIDs == "" && locIDs == "" {
+		locData, _, locErr := client.Request(c, http.MethodGet, "/locations.json", url.Values{}, nil)
+		if locErr == nil {
+			var locResp struct {
+				Locations []struct {
+					ID     int64 `json:"id"`
+					Active bool  `json:"active"`
+				} `json:"locations"`
+			}
+			if err := json.Unmarshal(locData, &locResp); err == nil && len(locResp.Locations) > 0 {
+				var ids []string
+				for _, loc := range locResp.Locations {
+					if loc.Active {
+						ids = append(ids, strconv.FormatInt(loc.ID, 10))
+					}
+				}
+				if len(ids) == 0 {
+					for _, loc := range locResp.Locations {
+						ids = append(ids, strconv.FormatInt(loc.ID, 10))
+					}
+				}
+				if len(ids) > 0 {
+					locIDs = strings.Join(ids, ",")
+				}
+			}
+		}
+	}
+
+	if itemIDs == "" && locIDs == "" {
+		return mcp.ToolResultError("at least one of 'location_ids' or 'inventory_item_ids' is required by Shopify to list inventory levels (use shopify_list_locations to discover available locations)")
+	}
+
 	q := url.Values{}
-	if itemIDs := strArg(m, "inventory_item_ids"); itemIDs != "" {
+	if itemIDs != "" {
 		q.Set("inventory_item_ids", itemIDs)
 	}
-	if locIDs := strArg(m, "location_ids"); locIDs != "" {
+	if locIDs != "" {
 		q.Set("location_ids", locIDs)
 	}
 	if l := intArg(m, "limit", 50); l > 0 {
 		q.Set("limit", strconv.Itoa(l))
 	}
 
-	c, cancel := ctx()
-	defer cancel()
 	data, _, err := client.Request(c, http.MethodGet, "/inventory_levels.json", q, nil)
 	if err != nil {
 		return mcp.ToolResultError(err.Error())

@@ -47,14 +47,14 @@ func registerCustomerTools(add toolAdder) {
 		"shopify_create_customer",
 		"Create a new customer profile with name, email, phone, and optional tags.",
 		baseProps(map[string]interface{}{
+			"email":      map[string]interface{}{"type": "string", "description": "Customer's email address"},
 			"first_name": map[string]interface{}{"type": "string", "description": "Customer's first name"},
 			"last_name":  map[string]interface{}{"type": "string", "description": "Customer's last name"},
-			"email":      map[string]interface{}{"type": "string", "description": "Customer's email address"},
 			"phone":      map[string]interface{}{"type": "string", "description": "Customer's phone number"},
 			"tags":       map[string]interface{}{"type": "string", "description": "Comma separated tags"},
 			"note":       map[string]interface{}{"type": "string", "description": "Note about the customer"},
 		}),
-		nil,
+		[]string{"email"},
 		handleShopifyCreateCustomer,
 	)
 
@@ -146,6 +146,12 @@ func handleShopifyCreateCustomer(args json.RawMessage) map[string]interface{} {
 		return mcp.ToolResultError(err.Error())
 	}
 
+	em := strArg(m, "email")
+	ph := strArg(m, "phone")
+	if em == "" && ph == "" {
+		return mcp.ToolResultError("email is required to create a customer (or phone)")
+	}
+
 	customer := map[string]interface{}{}
 	if fn := strArg(m, "first_name"); fn != "" {
 		customer["first_name"] = fn
@@ -153,10 +159,10 @@ func handleShopifyCreateCustomer(args json.RawMessage) map[string]interface{} {
 	if ln := strArg(m, "last_name"); ln != "" {
 		customer["last_name"] = ln
 	}
-	if em := strArg(m, "email"); em != "" {
+	if em != "" {
 		customer["email"] = em
 	}
-	if ph := strArg(m, "phone"); ph != "" {
+	if ph != "" {
 		customer["phone"] = ph
 	}
 	if tags := strArg(m, "tags"); tags != "" {

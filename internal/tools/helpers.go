@@ -67,6 +67,27 @@ func strArg(m map[string]interface{}, key string) string {
 	return strings.TrimSpace(fmt.Sprint(v))
 }
 
+func strOrSliceArg(m map[string]interface{}, key string) string {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return strings.TrimSpace(val)
+	case []interface{}:
+		var parts []string
+		for _, item := range val {
+			parts = append(parts, strings.TrimSpace(fmt.Sprint(item)))
+		}
+		return strings.Join(parts, ",")
+	case []string:
+		return strings.Join(val, ",")
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+}
+
 func intArg(m map[string]interface{}, key string, def int) int {
 	v, ok := m[key]
 	if !ok || v == nil {
