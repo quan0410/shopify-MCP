@@ -67,6 +67,7 @@ Full scope by default (50 tools). `SHOPIFY_TOOLS=tool1,tool2` narrows to an expl
 | `shopify_list_articles` | content | GET | `/blogs/{id}/articles.json` |
 | `shopify_get_article` | content | GET | `/blogs/{id}/articles/{id}.json` |
 | `shopify_create_article` | content | POST | `/blogs/{id}/articles.json` |
+| `shopify_update_article` | content | PUT | `/blogs/{blog_id}/articles/{article_id}.json` |
 | `shopify_graphql` | graphql | POST | `/graphql.json` |
 
 ## Protected Customer Data (PCD) Handling for Orders

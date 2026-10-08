@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/datumbridge/shopify-mcp/internal/tools"
@@ -17,8 +18,8 @@ func clearToolFilterEnv(t *testing.T) {
 func TestRegisterFullScopeByDefault(t *testing.T) {
 	clearToolFilterEnv(t)
 	descs, handlers := tools.Register()
-	if len(descs) != 50 {
-		t.Fatalf("expected full tool scope (50 tools), got %d", len(descs))
+	if len(descs) != 51 {
+		t.Fatalf("expected full tool scope (51 tools), got %d", len(descs))
 	}
 
 	wantedTools := []string{
@@ -48,10 +49,11 @@ func TestRegisterFullScopeByDefault(t *testing.T) {
 		"shopify_list_price_rules", "shopify_get_price_rule", "shopify_create_price_rule",
 		"shopify_delete_price_rule", "shopify_list_discount_codes", "shopify_create_discount_code",
 		"shopify_lookup_discount_code",
-		// Content: Pages & Blogs/Articles (9)
+		// Content: Pages & Blogs/Articles (10)
 		"shopify_list_pages", "shopify_get_page", "shopify_create_page",
 		"shopify_update_page", "shopify_delete_page", "shopify_list_blogs",
 		"shopify_list_articles", "shopify_get_article", "shopify_create_article",
+		"shopify_update_article",
 		// GraphQL (1)
 		"shopify_graphql",
 	}
@@ -173,6 +175,87 @@ func TestHandleListOrdersSuccess(t *testing.T) {
 	args := testCreds(t, srv)
 	_, handlers := tools.Register()
 	res := handlers["shopify_list_orders"](args)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+}
+
+func TestHandleListOrdersFilters(t *testing.T) {
+	clearToolFilterEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/admin/api/2024-04/orders.json" {
+			t.Errorf("unexpected path: %q", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("status") != "closed" {
+			t.Errorf("expected status 'closed', got %q", q.Get("status"))
+		}
+		if q.Get("financial_status") != "paid" {
+			t.Errorf("expected financial_status 'paid', got %q", q.Get("financial_status"))
+		}
+		if q.Get("fulfillment_status") != "shipped" {
+			t.Errorf("expected fulfillment_status 'shipped', got %q", q.Get("fulfillment_status"))
+		}
+		if q.Get("created_at_min") != "2024-05-01T00:00:00Z" {
+			t.Errorf("expected created_at_min '2024-05-01T00:00:00Z', got %q", q.Get("created_at_min"))
+		}
+		if q.Get("created_at_max") != "2024-05-31T23:59:59Z" {
+			t.Errorf("expected created_at_max '2024-05-31T23:59:59Z', got %q", q.Get("created_at_max"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"orders":[{"id":101},{"id":102}]}`))
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	var m map[string]interface{}
+	_ = json.Unmarshal(args, &m)
+	m["status"] = "closed"
+	m["financial_status"] = "paid"
+	m["fulfillment_status"] = "shipped"
+	m["created_at_min"] = "2024-05-01T00:00:00Z"
+	m["created_at_max"] = "2024-05-31T23:59:59Z"
+	raw, _ := json.Marshal(m)
+
+	_, handlers := tools.Register()
+	res := handlers["shopify_list_orders"](raw)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+}
+
+func TestHandleListOrdersDateRangeDefaults(t *testing.T) {
+	clearToolFilterEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/admin/api/2024-04/orders.json" {
+			t.Errorf("unexpected path: %q", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("status") != "any" {
+			t.Errorf("expected status 'any', got %q", q.Get("status"))
+		}
+		if q.Get("created_at_min") != "2024-05-01T00:00:00Z" {
+			t.Errorf("expected created_at_min '2024-05-01T00:00:00Z', got %q", q.Get("created_at_min"))
+		}
+		if q.Get("created_at_max") != "2024-05-31T23:59:59Z" {
+			t.Errorf("expected created_at_max '2024-05-31T23:59:59Z', got %q", q.Get("created_at_max"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"orders":[{"id":501}]}`))
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	var m map[string]interface{}
+	_ = json.Unmarshal(args, &m)
+	m["created_at_min"] = "2024-05-01"
+	m["created_at_max"] = "2024-05-31"
+	raw, _ := json.Marshal(m)
+
+	_, handlers := tools.Register()
+	res := handlers["shopify_list_orders"](raw)
 	if res["isError"] == true {
 		t.Fatalf("unexpected error result: %+v", res)
 	}
@@ -349,4 +432,168 @@ func TestHandleCreateCustomerMissingEmail(t *testing.T) {
 		t.Fatalf("expected error result for missing email, got: %+v", res)
 	}
 }
+
+func TestHandleUpdateArticleSuccess(t *testing.T) {
+	clearToolFilterEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		if r.URL.Path != "/admin/api/2024-04/blogs/100/articles/200.json" {
+			t.Errorf("unexpected path: %q", r.URL.Path)
+		}
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		art, ok := body["article"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected article key in body, got: %+v", body)
+		}
+		if art["published"] != true {
+			t.Errorf("expected published true, got %v", art["published"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"article":{"id":200,"published":true}}`))
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	var m map[string]interface{}
+	_ = json.Unmarshal(args, &m)
+	m["blog_id"] = "100"
+	m["article_id"] = "200"
+	m["is_published"] = true
+	raw, _ := json.Marshal(m)
+
+	_, handlers := tools.Register()
+	res := handlers["shopify_update_article"](raw)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+}
+
+func TestHandleUpdateArticleWithoutBlogID_GraphQL(t *testing.T) {
+	clearToolFilterEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/admin/api/2024-04/graphql.json" {
+			t.Errorf("unexpected path: %q", r.URL.Path)
+		}
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		vars := body["variables"].(map[string]interface{})
+		if vars["id"] != "gid://shopify/Article/622314520859" {
+			t.Errorf("expected GID for article, got %v", vars["id"])
+		}
+		art := vars["article"].(map[string]interface{})
+		if art["isPublished"] != false {
+			t.Errorf("expected isPublished false, got %v", art["isPublished"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"articleUpdate":{"article":{"id":"gid://shopify/Article/622314520859","isPublished":false}}}}`))
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	var m map[string]interface{}
+	_ = json.Unmarshal(args, &m)
+	m["article_id"] = "articles/622314520859"
+	m["is_published"] = false
+	raw, _ := json.Marshal(m)
+
+	_, handlers := tools.Register()
+	res := handlers["shopify_update_article"](raw)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+}
+
+func TestHandleUpdateArticleAllFieldsFakeData(t *testing.T) {
+	clearToolFilterEnv(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/admin/api/2024-04/graphql.json" {
+			t.Errorf("unexpected path: %q", r.URL.Path)
+		}
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		vars := body["variables"].(map[string]interface{})
+		if vars["id"] != "gid://shopify/Article/622314520859" {
+			t.Errorf("expected GID 'gid://shopify/Article/622314520859', got %v", vars["id"])
+		}
+		art := vars["article"].(map[string]interface{})
+		if art["title"] != "Hướng Dẫn Mua Sắm Mùa Hè 2024" {
+			t.Errorf("expected title, got %v", art["title"])
+		}
+		if art["body"] != "<h1>Chào hè rực rỡ</h1><p>Khám phá bộ sưu tập sản phẩm mới nhất cùng nhiều ưu đãi hấp dẫn.</p>" {
+			t.Errorf("expected body, got %v", art["body"])
+		}
+		auth, _ := art["author"].(map[string]interface{})
+		if auth["name"] != "DatumBridge Team" {
+			t.Errorf("expected author name 'DatumBridge Team', got %v", auth["name"])
+		}
+		tags, _ := art["tags"].([]interface{})
+		if len(tags) != 4 || tags[0] != "summer" || tags[1] != "sale" {
+			t.Errorf("expected tags [summer sale huong-dan fashion], got %v", tags)
+		}
+		if art["summary"] != "<p>Tổng hợp các mẹo mua sắm tiết kiệm và bộ sưu tập hè 2024.</p>" {
+			t.Errorf("expected summary, got %v", art["summary"])
+		}
+		if art["isPublished"] != true {
+			t.Errorf("expected isPublished true, got %v", art["isPublished"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"data": {
+				"articleUpdate": {
+					"article": {
+						"id": "gid://shopify/Article/622314520859",
+						"title": "Hướng Dẫn Mua Sắm Mùa Hè 2024",
+						"isPublished": true,
+						"publishedAt": "2024-06-01T10:00:00Z"
+					},
+					"userErrors": []
+				}
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	args := testCreds(t, srv)
+	var m map[string]interface{}
+	_ = json.Unmarshal(args, &m)
+	m["article_id"] = "622314520859"
+	m["title"] = "Hướng Dẫn Mua Sắm Mùa Hè 2024"
+	m["body_html"] = "<h1>Chào hè rực rỡ</h1><p>Khám phá bộ sưu tập sản phẩm mới nhất cùng nhiều ưu đãi hấp dẫn.</p>"
+	m["author"] = "DatumBridge Team"
+	m["tags"] = "summer, sale, huong-dan, fashion"
+	m["summary_html"] = "<p>Tổng hợp các mẹo mua sắm tiết kiệm và bộ sưu tập hè 2024.</p>"
+	m["is_published"] = true
+	raw, _ := json.Marshal(m)
+
+	_, handlers := tools.Register()
+	res := handlers["shopify_update_article"](raw)
+	if res["isError"] == true {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+
+	content, ok := res["content"].([]map[string]string)
+	if !ok || len(content) == 0 {
+		t.Fatalf("expected content in result, got: %+v", res)
+	}
+	text := content[0]["text"]
+	if !strings.Contains(text, "Hướng Dẫn Mua Sắm Mùa Hè 2024") {
+		t.Fatalf("expected text to contain title, got: %s", text)
+	}
+}
+
+
+
 

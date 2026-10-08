@@ -30,13 +30,15 @@ func isProtectedDataError(err error) bool {
 func registerOrderTools(add toolAdder) {
 	add(
 		"shopify_list_orders",
-		"List orders from the store with filters for status, financial_status, fulfillment_status, and pagination. To avoid Shopify 403 Forbidden / Protected Customer Data errors when the app lacks PCD approval, specify 'fields' (e.g. 'id,name,created_at,financial_status,fulfillment_status,total_price,currency,line_items') or set safe_mode to true.",
+		"List orders from the store with filters for status, financial_status, fulfillment_status, created_at range, and pagination. To avoid Shopify 403 Forbidden / Protected Customer Data errors when the app lacks PCD approval, specify 'fields' (e.g. 'id,name,created_at,financial_status,fulfillment_status,total_price,currency,line_items') or set safe_mode to true.",
 		baseProps(map[string]interface{}{
 			"limit":              map[string]interface{}{"type": "integer", "description": "Number of orders to retrieve (default 50, max 250)"},
 			"since_id":           map[string]interface{}{"type": "string", "description": "Restrict results to after the specified order ID"},
 			"status":             map[string]interface{}{"type": "string", "description": "Filter by status: open, closed, cancelled, any (default open)"},
 			"financial_status":   map[string]interface{}{"type": "string", "description": "Filter by financial status: authorized, pending, paid, refunded, voided, any"},
 			"fulfillment_status": map[string]interface{}{"type": "string", "description": "Filter by fulfillment status: shipped, partial, unshipped, any"},
+			"created_at_min":     map[string]interface{}{"type": "string", "description": "Filter orders created at or after date-time (ISO 8601, e.g. '2024-05-01T00:00:00Z')"},
+			"created_at_max":     map[string]interface{}{"type": "string", "description": "Filter orders created at or before date-time (ISO 8601, e.g. '2024-05-31T23:59:59Z')"},
 			"fields":             map[string]interface{}{"type": "string", "description": "Comma-separated list of fields to retrieve (e.g. 'id,name,order_number,created_at,financial_status,fulfillment_status,total_price,currency,line_items'). Excludes customer/address PII to prevent Shopify 403 Protected Customer Data errors."},
 			"safe_mode":          map[string]interface{}{"type": "boolean", "description": "If true, automatically queries only non-PII fields to avoid Protected Customer Data restrictions (default false)."},
 		}),
@@ -122,6 +124,22 @@ func registerOrderTools(add toolAdder) {
 	)
 }
 
+func formatISO8601Start(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) == 10 && strings.Count(s, "-") == 2 {
+		return s + "T00:00:00Z"
+	}
+	return s
+}
+
+func formatISO8601End(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) == 10 && strings.Count(s, "-") == 2 {
+		return s + "T23:59:59Z"
+	}
+	return s
+}
+
 func handleShopifyListOrders(args json.RawMessage) map[string]interface{} {
 	client, m, err := clientFrom(args)
 	if err != nil {
@@ -134,7 +152,23 @@ func handleShopifyListOrders(args json.RawMessage) map[string]interface{} {
 	if s := strArg(m, "since_id"); s != "" {
 		q.Set("since_id", s)
 	}
-	if st := strArg(m, "status"); st != "" {
+
+	createdAtMin := strArg(m, "created_at_min")
+	if createdAtMin != "" {
+		q.Set("created_at_min", formatISO8601Start(createdAtMin))
+	}
+
+	createdAtMax := strArg(m, "created_at_max")
+	if createdAtMax != "" {
+		q.Set("created_at_max", formatISO8601End(createdAtMax))
+	}
+
+	st := strArg(m, "status")
+	if st == "" && (createdAtMin != "" || createdAtMax != "") {
+		// When filtering by date range, default status to "any" so closed/archived orders aren't omitted by Shopify
+		st = "any"
+	}
+	if st != "" {
 		q.Set("status", st)
 	}
 	if fs := strArg(m, "financial_status"); fs != "" {

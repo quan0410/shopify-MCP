@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/datumbridge/shopify-mcp/internal/mcp"
 )
@@ -116,6 +117,23 @@ func registerContentTools(add toolAdder) {
 		}),
 		[]string{"blog_id", "title", "body_html"},
 		handleShopifyCreateArticle,
+	)
+
+	add(
+		"shopify_update_article",
+		"Update an existing blog article's title, body, author, tags, summary, or publication status (is_published).",
+		baseProps(map[string]interface{}{
+			"article_id":   map[string]interface{}{"type": "string", "description": "The numeric ID of the article to update (e.g. '622314520859' or 'articles/622314520859')"},
+			"blog_id":      map[string]interface{}{"type": "string", "description": "The numeric ID of the blog (optional)"},
+			"title":        map[string]interface{}{"type": "string", "description": "New title for the article"},
+			"author":       map[string]interface{}{"type": "string", "description": "Author name"},
+			"body_html":    map[string]interface{}{"type": "string", "description": "New HTML or text content"},
+			"tags":         map[string]interface{}{"type": "string", "description": "Comma-separated list of tags"},
+			"summary_html": map[string]interface{}{"type": "string", "description": "Article summary/excerpt"},
+			"is_published": map[string]interface{}{"type": "boolean", "description": "Whether the article is published (true to publish, false to unpublish/draft)"},
+		}),
+		[]string{"article_id"},
+		handleShopifyUpdateArticle,
 	)
 }
 
@@ -341,3 +359,122 @@ func handleShopifyCreateArticle(args json.RawMessage) map[string]interface{} {
 	}
 	return rawResult(data)
 }
+
+func handleShopifyUpdateArticle(args json.RawMessage) map[string]interface{} {
+	client, m, err := clientFrom(args)
+	if err != nil {
+		return mcp.ToolResultError(err.Error())
+	}
+	blogID := strArg(m, "blog_id")
+	articleID := strArg(m, "article_id")
+	articleID = strings.TrimPrefix(articleID, "articles/")
+	articleID = strings.TrimPrefix(articleID, "gid://shopify/Article/")
+	if articleID == "" {
+		return mcp.ToolResultError("article_id is required")
+	}
+
+	if blogID == "" {
+		gid := fmt.Sprintf("gid://shopify/Article/%s", articleID)
+		artInput := map[string]interface{}{}
+		if t := strArg(m, "title"); t != "" {
+			artInput["title"] = t
+		}
+		if b := strArg(m, "body_html"); b != "" {
+			artInput["body"] = b
+		}
+		if a := strArg(m, "author"); a != "" {
+			artInput["author"] = map[string]interface{}{"name": a}
+		}
+		if tg := strArg(m, "tags"); tg != "" {
+			var tags []string
+			for _, tag := range strings.Split(tg, ",") {
+				if trimmed := strings.TrimSpace(tag); trimmed != "" {
+					tags = append(tags, trimmed)
+				}
+			}
+			artInput["tags"] = tags
+		}
+		if s := strArg(m, "summary_html"); s != "" {
+			artInput["summary"] = s
+		}
+		if _, ok := m["is_published"]; ok {
+			artInput["isPublished"] = boolArg(m, "is_published", true)
+		}
+
+		mutation := `mutation articleUpdate($id: ID!, $article: ArticleUpdateInput!) {
+			articleUpdate(id: $id, article: $article) {
+				article {
+					id
+					title
+					isPublished
+					publishedAt
+				}
+				userErrors {
+					field
+					message
+				}
+			}
+		}`
+		vars := map[string]interface{}{
+			"id":      gid,
+			"article": artInput,
+		}
+		c, cancel := ctx()
+		defer cancel()
+		data, _, err := client.GraphQL(c, mutation, vars)
+		if err != nil {
+			return mcp.ToolResultError(err.Error())
+		}
+
+		var resp struct {
+			Data struct {
+				ArticleUpdate struct {
+					Article    map[string]interface{} `json:"article"`
+					UserErrors []struct {
+						Field   []string `json:"field"`
+						Message string   `json:"message"`
+					} `json:"userErrors"`
+				} `json:"articleUpdate"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(data, &resp); err == nil && len(resp.Data.ArticleUpdate.UserErrors) > 0 {
+			var errMsgs []string
+			for _, ue := range resp.Data.ArticleUpdate.UserErrors {
+				errMsgs = append(errMsgs, fmt.Sprintf("%s: %s", strings.Join(ue.Field, "."), ue.Message))
+			}
+			return mcp.ToolResultError(fmt.Sprintf("Shopify error: %s", strings.Join(errMsgs, ", ")))
+		}
+
+		return rawResult(data)
+	}
+
+	article := map[string]interface{}{"id": articleID}
+	if t := strArg(m, "title"); t != "" {
+		article["title"] = t
+	}
+	if b := strArg(m, "body_html"); b != "" {
+		article["body_html"] = b
+	}
+	if a := strArg(m, "author"); a != "" {
+		article["author"] = a
+	}
+	if tg := strArg(m, "tags"); tg != "" {
+		article["tags"] = tg
+	}
+	if s := strArg(m, "summary_html"); s != "" {
+		article["summary_html"] = s
+	}
+	if _, ok := m["is_published"]; ok {
+		article["published"] = boolArg(m, "is_published", true)
+	}
+
+	payload := map[string]interface{}{"article": article}
+	c, cancel := ctx()
+	defer cancel()
+	data, _, err := client.Request(c, http.MethodPut, fmt.Sprintf("/blogs/%s/articles/%s.json", blogID, articleID), url.Values{}, payload)
+	if err != nil {
+		return mcp.ToolResultError(err.Error())
+	}
+	return rawResult(data)
+}
+
