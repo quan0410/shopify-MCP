@@ -2,6 +2,7 @@ package tools
 
 import (
 	"github.com/datumbridge/shopify-mcp/internal/mcp"
+	registrydocs "github.com/datumbridge/shopify-mcp/registry_docs"
 )
 
 // Register returns the full shopify-mcp tool catalogue: products, orders,
@@ -16,10 +17,14 @@ func Register() ([]mcp.ToolDesc, map[string]mcp.ToolHandler) {
 		if !cfg.toolEnabled(name) {
 			return
 		}
+		input := schema(props, required)
+		if doc := registrydocs.Markdown(name); doc != "" {
+			input["x-datumbridge-docs"] = doc
+		}
 		descs = append(descs, mcp.ToolDesc{
 			Name:        name,
 			Description: desc,
-			InputSchema: schema(props, required),
+			InputSchema: input,
 		})
 		handlers[name] = h
 	}

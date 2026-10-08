@@ -63,6 +63,13 @@ func TestRegisterFullScopeByDefault(t *testing.T) {
 			t.Fatalf("missing tool handler: %s", want)
 		}
 	}
+
+	for _, desc := range descs {
+		doc, ok := desc.InputSchema["x-datumbridge-docs"].(string)
+		if !ok || doc == "" {
+			t.Fatalf("missing x-datumbridge-docs in tool descriptor for: %s", desc.Name)
+		}
+	}
 }
 
 func TestRegisterCustomAllowlist(t *testing.T) {
