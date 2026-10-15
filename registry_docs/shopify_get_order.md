@@ -7,7 +7,7 @@ The gateway injects `credentials_json` from the connected Shopify account. Do no
 ## Agent rules
 
 - Call this tool only for the Shopify action in the title. Do not guess missing IDs.
-- Shopify IDs (`product_id`, `order_id`, `customer_id`, `variant_id`, etc.) come from previous Shopify tool results or explicit user input. They are opaque numeric strings or GIDs, never invented.
+- Shopify IDs (`product_id`, `order_id`, `customer_id`, `variant_id`, `location_id`, `inventory_item_id`, `collection_id`, `price_rule_id`, `page_id`, `blog_id`, `article_id`, `fulfillment_id`) come from previous Shopify tool results or explicit user input. They are opaque numeric strings or GIDs, never invented.
 - On `isError: true` or error result, inspect `content[0].text`. Retry only when retryable. Retry `AUTH_ERROR` at most once after credential refresh. Retry `RATE_LIMIT` (Shopify 429) at most three times with exponential backoff. Never retry `VALIDATION_ERROR`, `NOT_FOUND`, `PERMISSION_DENIED`, `CREDENTIALS_REQUIRED`, or `INVALID_CREDENTIALS`.
 - Missing required arguments are rejected by the MCP JSON-RPC schema (`-32602`) before the handler runs. There is no `{success:false, error:{error_code}}` body for that case. Do not fill placeholders such as `example` unless the user supplied that value.
 - Protected Customer Data (PCD): If Shopify returns 403 Forbidden regarding customer data access, specify explicit non-PII fields (or set `safe_mode: true`), or use `shopify_graphql` to query public fields.
@@ -21,11 +21,13 @@ Ensure a valid numeric ID is available from previous list or search results befo
 
 ## Parameters
 
-| Name | Required | Type | Sample | Meaning |
-|---|---|---|---|---|
-| `order_id` | yes | string | `"450789469"` | Order ID |
-| `fields` | no | string | `"id,name,created_at,financial_status,total_price"` | Comma-separated list of fields to retrieve (e.g. 'id,name,order_number,created_at,financial_status,fulfillment_status,total_price,currency,line_items'). |
-| `safe_mode` | no | boolean | `true` | If true, queries only non-PII fields to avoid Protected Customer Data restrictions (default false). |
+| Name | Required | Type | Sample | Related tool | Meaning |
+|---|---|---|---|---|---|
+| `order_id` | yes | string | `"450789469"` | `shopify_list_orders` → `orders[0].id` | Order ID |
+| `fields` | no | string | `"id,name,created_at,financial_status,total_price"` | — | Comma-separated list of fields to retrieve (e.g. 'id,name,order_number,created_at,financial_status,fulfillment_status,total_price,currency,line_items'). |
+| `safe_mode` | no | boolean | `true` | — | If true, queries only non-PII fields to avoid Protected Customer Data restrictions (default false). |
+
+**Related tool** (optional): when the user did not supply this id, Deep runs the named producer on the same MCP server and binds the output field (`tool` → `field`, machine-read as `x-datumbridge-related-tool` + `x-datumbridge-output-field` on the JSON Schema property). Use a concrete bind path (`id`, `boards[0].id`). Leave `—` for free-text, enums, and values only the user can give. Samples stay shapes; never send `"example-id"` live.
 
 ## Success fields
 

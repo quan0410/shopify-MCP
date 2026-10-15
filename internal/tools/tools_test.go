@@ -69,6 +69,16 @@ func TestRegisterFullScopeByDefault(t *testing.T) {
 		if !ok || doc == "" {
 			t.Fatalf("missing x-datumbridge-docs in tool descriptor for: %s", desc.Name)
 		}
+		caps, ok := desc.InputSchema["x-datumbridge-capabilities"].([]string)
+		if !ok || len(caps) == 0 {
+			t.Errorf("tool %s missing x-datumbridge-capabilities in InputSchema", desc.Name)
+		}
+		if !strings.Contains(desc.Description, "Capabilities: shopify."+desc.Name) {
+			t.Errorf("tool %s description missing Capabilities: shopify.%s", desc.Name, desc.Name)
+		}
+		if !strings.Contains(desc.Description, "Outputs:") {
+			t.Errorf("tool %s description missing Outputs:", desc.Name)
+		}
 	}
 }
 

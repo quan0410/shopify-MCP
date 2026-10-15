@@ -7,7 +7,7 @@ The gateway injects `credentials_json` from the connected Shopify account. Do no
 ## Agent rules
 
 - Call this tool only for the Shopify action in the title. Do not guess missing IDs.
-- Shopify IDs (`product_id`, `order_id`, `customer_id`, `variant_id`, etc.) come from previous Shopify tool results or explicit user input. They are opaque numeric strings or GIDs, never invented.
+- Shopify IDs (`product_id`, `order_id`, `customer_id`, `variant_id`, `location_id`, `inventory_item_id`, `collection_id`, `price_rule_id`, `page_id`, `blog_id`, `article_id`, `fulfillment_id`) come from previous Shopify tool results or explicit user input. They are opaque numeric strings or GIDs, never invented.
 - On `isError: true` or error result, inspect `content[0].text`. Retry only when retryable. Retry `AUTH_ERROR` at most once after credential refresh. Retry `RATE_LIMIT` (Shopify 429) at most three times with exponential backoff. Never retry `VALIDATION_ERROR`, `NOT_FOUND`, `PERMISSION_DENIED`, `CREDENTIALS_REQUIRED`, or `INVALID_CREDENTIALS`.
 - Missing required arguments are rejected by the MCP JSON-RPC schema (`-32602`) before the handler runs. There is no `{success:false, error:{error_code}}` body for that case. Do not fill placeholders such as `example` unless the user supplied that value.
 - Scope requirement: Ensure the Shopify App possesses the `write_content / read_content` permission scope. Stop immediately on 403 Forbidden.
@@ -20,16 +20,18 @@ Provide the required resource ID and only the specific fields that need modifica
 
 ## Parameters
 
-| Name | Required | Type | Sample | Meaning |
-|---|---|---|---|---|
-| `article_id` | yes | string | `"622314520"` | The numeric ID of the article to update (e.g. '622314520859' or 'articles/622314520859') |
-| `blog_id` | no | string | `"241253491"` | The numeric ID of the blog (optional) |
-| `title` | no | string | `"Premium Silk Shirt"` | New title for the article |
-| `author` | no | string | `"Founder"` | Author name |
-| `body_html` | no | string | `"<p>High quality lightweight silk shirt.</p>"` | New HTML or text content |
-| `tags` | no | string | `"summer, silk, apparel"` | Comma-separated list of tags |
-| `summary_html` | no | string | `"<p>Overview of summer collection highlights.</p>"` | Article summary/excerpt |
-| `is_published` | no | boolean | `true` | Whether the article is published (true to publish, false to unpublish/draft) |
+| Name | Required | Type | Sample | Related tool | Meaning |
+|---|---|---|---|---|---|
+| `article_id` | yes | string | `"622314520"` | `shopify_list_articles` → `articles[0].id` | The numeric ID of the article to update (e.g. '622314520859' or 'articles/622314520859') |
+| `blog_id` | no | string | `"241253491"` | `shopify_list_blogs` → `blogs[0].id` | The numeric ID of the blog (optional) |
+| `title` | no | string | `"Premium Silk Shirt"` | — | New title for the article |
+| `author` | no | string | `"Founder"` | — | Author name |
+| `body_html` | no | string | `"<p>High quality lightweight silk shirt.</p>"` | — | New HTML or text content |
+| `tags` | no | string | `"summer, silk, apparel"` | — | Comma-separated list of tags |
+| `summary_html` | no | string | `"<p>Overview of summer collection highlights.</p>"` | — | Article summary/excerpt |
+| `is_published` | no | boolean | `true` | — | Whether the article is published (true to publish, false to unpublish/draft) |
+
+**Related tool** (optional): when the user did not supply this id, Deep runs the named producer on the same MCP server and binds the output field (`tool` → `field`, machine-read as `x-datumbridge-related-tool` + `x-datumbridge-output-field` on the JSON Schema property). Use a concrete bind path (`id`, `boards[0].id`). Leave `—` for free-text, enums, and values only the user can give. Samples stay shapes; never send `"example-id"` live.
 
 ## Success fields
 

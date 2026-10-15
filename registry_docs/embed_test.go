@@ -44,17 +44,22 @@ var allShopifyTools = []string{
 func TestMarkdown_AllToolsExist(t *testing.T) {
 	for _, name := range allShopifyTools {
 		doc := Markdown(name)
-		if doc == "" {
-			t.Errorf("missing documentation file for tool: %s", name)
+		if strings.TrimSpace(doc) == "" {
+			t.Errorf("missing or empty documentation file for tool: %s", name)
 		}
 		if !strings.HasPrefix(doc, "# "+name) {
 			t.Errorf("doc for %s should start with header '# %s'", name, name)
 		}
-		if !strings.Contains(doc, "## Parameters") {
-			t.Errorf("doc for %s missing '## Parameters' section", name)
+		for _, section := range []string{"## Agent rules", "## Parameters", "## Success fields", "## Error codes", "## Cases"} {
+			if !strings.Contains(doc, section) {
+				t.Errorf("doc for %q missing section %q", name, section)
+			}
 		}
-		if !strings.Contains(doc, "## Cases") {
-			t.Errorf("doc for %s missing '## Cases' section", name)
+		if !strings.Contains(doc, "Related tool") {
+			t.Errorf("doc for %q missing 'Related tool' in Parameters table", name)
+		}
+		if len(doc) > 24000 {
+			t.Errorf("doc for %q exceeds max 24000 chars: %d", name, len(doc))
 		}
 	}
 }

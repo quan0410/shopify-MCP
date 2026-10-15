@@ -1,13 +1,13 @@
 # shopify_list_inventory_levels
 
-Retrieve inventory levels for specific inventory_item_ids or location_ids. Shopify requires at least one of location_ids or inventory_item_ids; if neither is provided, active store locations are automatically queried.
+Retrieve inventory levels for specific inventory_item_ids or location_ids. Call `shopify_adjust_inventory_level` or `shopify_set_inventory_level` to update stock quantities.
 
 The gateway injects `credentials_json` from the connected Shopify account. Do not invent a token, paste a secret, or pass `credentials_path` / `credentials_json`. If those fields appear in the schema, omit them.
 
 ## Agent rules
 
 - Call this tool only for the Shopify action in the title. Do not guess missing IDs.
-- Shopify IDs (`product_id`, `order_id`, `customer_id`, `variant_id`, etc.) come from previous Shopify tool results or explicit user input. They are opaque numeric strings or GIDs, never invented.
+- Shopify IDs (`product_id`, `order_id`, `customer_id`, `variant_id`, `location_id`, `inventory_item_id`, `collection_id`, `price_rule_id`, `page_id`, `blog_id`, `article_id`, `fulfillment_id`) come from previous Shopify tool results or explicit user input. They are opaque numeric strings or GIDs, never invented.
 - On `isError: true` or error result, inspect `content[0].text`. Retry only when retryable. Retry `AUTH_ERROR` at most once after credential refresh. Retry `RATE_LIMIT` (Shopify 429) at most three times with exponential backoff. Never retry `VALIDATION_ERROR`, `NOT_FOUND`, `PERMISSION_DENIED`, `CREDENTIALS_REQUIRED`, or `INVALID_CREDENTIALS`.
 - Missing required arguments are rejected by the MCP JSON-RPC schema (`-32602`) before the handler runs. There is no `{success:false, error:{error_code}}` body for that case. Do not fill placeholders such as `example` unless the user supplied that value.
 - Scope requirement: Ensure the Shopify App possesses the `write_inventory / read_inventory` permission scope. Stop immediately on 403 Forbidden.
@@ -20,11 +20,13 @@ Supports filtering, pagination limits, and status queries where available.
 
 ## Parameters
 
-| Name | Required | Type | Sample | Meaning |
-|---|---|---|---|---|
-| `location_ids` | no | string | `"487920192"` | Comma-separated list or array of location IDs. Required by Shopify unless inventory_item_ids is provided (auto-detected from active store locations if omitted). |
-| `inventory_item_ids` | no | string | `"808950810"` | Comma-separated list or array of inventory item IDs. Required by Shopify unless location_ids is provided. |
-| `limit` | no | integer | `50` | Number of inventory levels to return (default 50, max 250) |
+| Name | Required | Type | Sample | Related tool | Meaning |
+|---|---|---|---|---|---|
+| `location_ids` | no | string | `"487920192"` | `shopify_list_locations` → `locations[0].id` | Comma-separated list or array of location IDs. Required by Shopify unless inventory_item_ids is provided (auto-detected from active store locations if omitted). |
+| `inventory_item_ids` | no | string | `"808950810"` | `shopify_get_variant` → `variant.inventory_item_id` | Comma-separated list or array of inventory item IDs. Required by Shopify unless location_ids is provided. |
+| `limit` | no | integer | `50` | — | Number of inventory levels to return (default 50, max 250) |
+
+**Related tool** (optional): when the user did not supply this id, Deep runs the named producer on the same MCP server and binds the output field (`tool` → `field`, machine-read as `x-datumbridge-related-tool` + `x-datumbridge-output-field` on the JSON Schema property). Use a concrete bind path (`id`, `boards[0].id`). Leave `—` for free-text, enums, and values only the user can give. Samples stay shapes; never send `"example-id"` live.
 
 ## Success fields
 

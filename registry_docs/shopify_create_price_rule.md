@@ -7,7 +7,7 @@ The gateway injects `credentials_json` from the connected Shopify account. Do no
 ## Agent rules
 
 - Call this tool only for the Shopify action in the title. Do not guess missing IDs.
-- Shopify IDs (`product_id`, `order_id`, `customer_id`, `variant_id`, etc.) come from previous Shopify tool results or explicit user input. They are opaque numeric strings or GIDs, never invented.
+- Shopify IDs (`product_id`, `order_id`, `customer_id`, `variant_id`, `location_id`, `inventory_item_id`, `collection_id`, `price_rule_id`, `page_id`, `blog_id`, `article_id`, `fulfillment_id`) come from previous Shopify tool results or explicit user input. They are opaque numeric strings or GIDs, never invented.
 - On `isError: true` or error result, inspect `content[0].text`. Retry only when retryable. Retry `AUTH_ERROR` at most once after credential refresh. Retry `RATE_LIMIT` (Shopify 429) at most three times with exponential backoff. Never retry `VALIDATION_ERROR`, `NOT_FOUND`, `PERMISSION_DENIED`, `CREDENTIALS_REQUIRED`, or `INVALID_CREDENTIALS`.
 - Missing required arguments are rejected by the MCP JSON-RPC schema (`-32602`) before the handler runs. There is no `{success:false, error:{error_code}}` body for that case. Do not fill placeholders such as `example` unless the user supplied that value.
 - Scope requirement: Ensure the Shopify App possesses the `write_price_rules / read_price_rules` permission scope. Stop immediately on 403 Forbidden.
@@ -20,17 +20,19 @@ Verify that all required fields are provided before sending the request.
 
 ## Parameters
 
-| Name | Required | Type | Sample | Meaning |
-|---|---|---|---|---|
-| `title` | yes | string | `"Premium Silk Shirt"` | Title of the price rule |
-| `target_type` | yes | string | `"line_item"` | line_item or shipping_line |
-| `target_selection` | yes | string | `"all"` | all or entitled |
-| `allocation_method` | yes | string | `"across"` | across or each |
-| `value_type` | yes | string | `"percentage"` | percentage or fixed_amount |
-| `value` | yes | string | `"-15.0"` | Discount value (negative number, e.g. -15.0) |
-| `customer_selection` | yes | string | `"all"` | all or prerequisite |
-| `starts_at` | yes | string | `"2024-06-01T00:00:00Z"` | ISO 8601 start date and time |
-| `ends_at` | no | string | `"sample_value"` | ISO 8601 end date and time (optional) |
+| Name | Required | Type | Sample | Related tool | Meaning |
+|---|---|---|---|---|---|
+| `title` | yes | string | `"Summer 15% Off"` | — | Title of the price rule |
+| `target_type` | yes | string | `"line_item"` | — | line_item or shipping_line |
+| `target_selection` | yes | string | `"all"` | — | all or entitled |
+| `allocation_method` | yes | string | `"across"` | — | across or each |
+| `value_type` | yes | string | `"percentage"` | — | percentage or fixed_amount |
+| `value` | yes | string | `"-15.0"` | — | Discount value (negative number, e.g. -15.0) |
+| `customer_selection` | yes | string | `"all"` | — | all or prerequisite |
+| `starts_at` | yes | string | `"2024-06-01T00:00:00Z"` | — | ISO 8601 start date and time |
+| `ends_at` | no | string | `"2024-12-31T23:59:59Z"` | — | ISO 8601 end date and time (optional) |
+
+**Related tool** (optional): when the user did not supply this id, Deep runs the named producer on the same MCP server and binds the output field (`tool` → `field`, machine-read as `x-datumbridge-related-tool` + `x-datumbridge-output-field` on the JSON Schema property). Use a concrete bind path (`id`, `boards[0].id`). Leave `—` for free-text, enums, and values only the user can give. Samples stay shapes; never send `"example-id"` live.
 
 ## Success fields
 
