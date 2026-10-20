@@ -7,19 +7,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Credentials matches datumbridge-integrations' ShopifyTokenBundle
 // (internal/credentials/vault.go).
 type Credentials struct {
-	Type         string   `json:"type"`
-	Shop         string   `json:"shop"`
-	Token        string   `json:"token"`
-	RefreshToken string   `json:"refresh_token,omitempty"`
-	ClientID     string   `json:"client_id,omitempty"`
-	ClientSecret string   `json:"client_secret,omitempty"`
-	Scopes       []string `json:"scopes,omitempty"`
-	TokenURI     string   `json:"token_uri,omitempty"`
+	Type         string    `json:"type"`
+	Shop         string    `json:"shop"`
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	ClientID     string    `json:"client_id,omitempty"`
+	ClientSecret string    `json:"client_secret,omitempty"`
+	Scopes       []string  `json:"scopes,omitempty"`
+	TokenURI     string    `json:"token_uri,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at,omitempty"`
 }
 
 // NormalizeShop normalizes a shop string into standard "example.myshopify.com" host.
